@@ -6,8 +6,12 @@ import (
 	"tribe-payments-wallet-golang-interview-assignment/internal/api"
 	"tribe-payments-wallet-golang-interview-assignment/internal/config"
 	"tribe-payments-wallet-golang-interview-assignment/internal/http"
+	"tribe-payments-wallet-golang-interview-assignment/internal/wallet"
+
+	"database/sql"
 
 	"github.com/go-chi/chi/v5"
+	_ "github.com/microsoft/go-mssqldb" // Example for MSSQL Server, adjust if using another driver.
 	"github.com/spf13/cobra"
 	"github.com/sumup-oss/go-pkgs/errors"
 	"github.com/sumup-oss/go-pkgs/logger"
@@ -49,6 +53,18 @@ func NewApiCmd(osExecutor os.OsExecutor) *cobra.Command {
 				cfg.GracefulShutdownTimeout,
 			)
 
+			db, err := sql.Open("sqlserver", "server=localhost\\SQLEXPRESS;database=wallet_db;trusted_connection=yes;")
+			if err != nil {
+				return errors.Wrap(err, "failed to connect to database")
+			}
+			defer db.Close()
+
+			// Initialise Wallet Repository
+			walletRepo := wallet.NewRepository(db)
+
+			// Initialise Wallet Service with the Repository
+			walletService := wallet.NewService(walletRepo)
+
 			mux := chi.NewRouter()
 			mux.Use(
 				http.Recovery(
@@ -64,7 +80,8 @@ func NewApiCmd(osExecutor os.OsExecutor) *cobra.Command {
 				),
 			)
 
-			api.RegisterRoutes(mux, log)
+			// Pass walletService to RegisterRoutes
+			api.RegisterRoutes(mux, log, walletService)
 
 			httpServer := http.NewServer(
 				log,

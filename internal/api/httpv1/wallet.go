@@ -39,7 +39,7 @@ func NewCreateWalletHandler(svc wallet.Service, log logger.StructuredLogger) htt
 
 		newWallet, err := svc.CreateWallet(r.Context(), req.Currency)
 		if err != nil {
-			log.WithError(err).Error("Failed to create wallet")
+			log.Error("Failed to create wallet")
 			WriteError(w, http.StatusInternalServerError, "Failed to create wallet")
 			return
 		}
@@ -70,7 +70,7 @@ func NewGetWalletHandler(svc wallet.Service, log logger.StructuredLogger) http.H
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 				return
 			}
-			log.WithError(err).Error("Failed to get wallet")
+			log.Error("Failed to get wallet")
 			WriteError(w, http.StatusInternalServerError, "Failed to get wallet")
 			return
 		}
@@ -108,7 +108,7 @@ func NewDepositHandler(svc wallet.Service, log logger.StructuredLogger) http.Han
 			case errors.Is(err, wallet.ErrWalletNotFound):
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 			default:
-				log.WithError(err).Error("Failed to deposit")
+				log.Error("Failed to deposit")
 				WriteError(w, http.StatusInternalServerError, "Failed to process deposit")
 			}
 			return
@@ -141,7 +141,7 @@ func NewWithdrawHandler(svc wallet.Service, log logger.StructuredLogger) http.Ha
 			case errors.Is(err, wallet.ErrWalletNotFound):
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 			default:
-				log.WithError(err).Error("Failed to withdraw")
+				log.Error("Failed to withdraw")
 				WriteError(w, http.StatusInternalServerError, "Failed to process withdrawal")
 			}
 			return
