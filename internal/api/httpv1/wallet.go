@@ -1,7 +1,9 @@
 package httpv1
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/sumup-oss/go-pkgs/logger"
@@ -26,14 +28,31 @@ type WalletResponse struct {
 }
 
 type OperationRequest struct {
-	Amount float64 `json:"amount"`
+	Balance float64 `json:"balance"`
 }
 
 func NewCreateWalletHandler(svc wallet.Service, log logger.StructuredLogger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Body == nil {
+			WriteError(w, http.StatusBadRequest, "Request body is required")
+			return
+		}
+
 		var req CreateWalletRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Error("Failed to decode request body")
 			WriteError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		if req.Currency == "" {
+			WriteError(w, http.StatusBadRequest, "Currency is required")
+			return
+		}
+
+		req.Currency = strings.ToUpper(req.Currency)
+		if len(req.Currency) != 3 {
+			WriteError(w, http.StatusBadRequest, "Currency must be a 3-letter ISO code")
 			return
 		}
 
@@ -66,6 +85,9 @@ func NewGetWalletHandler(svc wallet.Service, log logger.StructuredLogger) http.H
 
 		foundWallet, err := svc.GetWallet(r.Context(), walletID)
 		if err != nil {
+			// Add this debug line
+			log.Error(fmt.Sprintf("Error getting wallet: %v", err))
+
 			if errors.Is(err, wallet.ErrWalletNotFound) {
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 				return
@@ -96,19 +118,28 @@ func NewDepositHandler(svc wallet.Service, log logger.StructuredLogger) http.Han
 		}
 
 		var req OperationRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, "Invalid request body")
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields() // Prevent unknown fields
+
+		if err := decoder.Decode(&req); err != nil {
+			log.Error(fmt.Sprintf("Failed to decode deposit request body: %v", err))
+			WriteError(w, http.StatusBadRequest, "Invalid JSON format or unknown fields")
 			return
 		}
 
-		if err := svc.Deposit(r.Context(), walletID, req.Amount); err != nil {
+		if req.Balance <= 0 {
+			WriteError(w, http.StatusBadRequest, "Amount must be greater than zero")
+			return
+		}
+
+		if err := svc.Deposit(r.Context(), walletID, req.Balance); err != nil {
 			switch {
 			case errors.Is(err, wallet.ErrInvalidAmount):
 				WriteError(w, http.StatusBadRequest, "Invalid amount")
 			case errors.Is(err, wallet.ErrWalletNotFound):
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 			default:
-				log.Error("Failed to deposit")
+				log.Error("Failed to process deposit")
 				WriteError(w, http.StatusInternalServerError, "Failed to process deposit")
 			}
 			return
@@ -127,12 +158,21 @@ func NewWithdrawHandler(svc wallet.Service, log logger.StructuredLogger) http.Ha
 		}
 
 		var req OperationRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			WriteError(w, http.StatusBadRequest, "Invalid request body")
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields() // Prevent unknown fields
+
+		if err := decoder.Decode(&req); err != nil {
+			log.Error(fmt.Sprintf("Failed to decode withdraw request body: %v", err))
+			WriteError(w, http.StatusBadRequest, "Invalid JSON format or unknown fields")
 			return
 		}
 
-		if err := svc.Withdraw(r.Context(), walletID, req.Amount); err != nil {
+		if req.Balance <= 0 {
+			WriteError(w, http.StatusBadRequest, "Amount must be greater than zero")
+			return
+		}
+
+		if err := svc.Withdraw(r.Context(), walletID, req.Balance); err != nil {
 			switch {
 			case errors.Is(err, wallet.ErrInvalidAmount):
 				WriteError(w, http.StatusBadRequest, "Invalid amount")
@@ -141,7 +181,7 @@ func NewWithdrawHandler(svc wallet.Service, log logger.StructuredLogger) http.Ha
 			case errors.Is(err, wallet.ErrWalletNotFound):
 				WriteError(w, http.StatusNotFound, "Wallet not found")
 			default:
-				log.Error("Failed to withdraw")
+				log.Error("Failed to process withdrawal")
 				WriteError(w, http.StatusInternalServerError, "Failed to process withdrawal")
 			}
 			return
